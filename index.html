@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ABI · Raid Tracker</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* ─── SETUP ─────────────────────────────────────────────────────────────────
+   Find WEB_APP_URL near the bottom of this file and replace with your
+   deployed Google Apps Script Web App URL.
+   ────────────────────────────────────────────────────────────────────────── */
+:root {
+  --bg:     #07090f; --surface: #0d1117; --card: #111827;
+  --border: #1e2d40; --accent: #e94560;  --amber: #f0a500;
+  --green:  #00cc66; --red:    #ff4444;  --text:  #c8d6e8;
+  --dim:    #6b7a8d; --mono: 'Share Tech Mono',monospace; --sans: 'Rajdhani',sans-serif;
+}
+*,*::before,*::after { box-sizing:border-box; margin:0; padding:0; }
+body { background:var(--bg); color:var(--text); font-family:var(--sans); min-height:100vh; overflow-x:hidden; }
+body::after { content:''; position:fixed; inset:0; background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.06) 2px,rgba(0,0,0,.06) 4px); pointer-events:none; z-index:9998; }
+
+/* Header */
+header { background:linear-gradient(135deg,#08101e,#0d1f3c); border-bottom:2px solid var(--accent); padding:14px 28px; display:flex; align-items:center; justify-content:space-between; gap:12px; position:sticky; top:0; z-index:200; box-shadow:0 4px 40px rgba(233,69,96,.18); }
+.h-left { display:flex; align-items:center; gap:14px; }
+.hex { width:40px; height:40px; flex-shrink:0; background:var(--accent); clip-path:polygon(50% 0%,100% 25%,100% 75%,50% 100%,0% 75%,0% 25%); display:flex; align-items:center; justify-content:center; font-size:17px; }
+h1 { font-family:var(--mono); font-size:19px; color:#fff; letter-spacing:.07em; }
+h1 em { color:var(--accent); font-style:normal; }
+.tagline { font-family:var(--mono); font-size:10px; color:var(--dim); letter-spacing:.14em; margin-top:2px; }
+.h-right { display:flex; align-items:center; gap:10px; }
+
+/* Buttons */
+.btn-new { font-family:var(--mono); font-size:12px; font-weight:700; letter-spacing:.1em; color:#fff; background:var(--accent); border:none; padding:9px 20px; border-radius:3px; cursor:pointer; transition:background .15s,transform .1s; white-space:nowrap; }
+.btn-new:hover { background:#c73550; transform:translateY(-1px); }
+.btn-new:active { transform:none; }
+
+/* Sync */
+.sync { font-family:var(--mono); font-size:11px; color:var(--dim); text-align:right; line-height:1.5; }
+.dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--green); margin-right:5px; animation:blink 2.4s infinite; }
+.dot.loading { animation:spin 1s linear infinite; border:2px solid var(--amber); border-top-color:transparent; background:transparent; }
+.dot.error { background:var(--red); animation:none; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
+@keyframes spin  { to{transform:rotate(360deg)} }
+
+/* Layout */
+main { max-width:1400px; margin:0 auto; padding:26px 22px 70px; }
+
+/* Cards */
+.cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr)); gap:12px; margin-bottom:28px; }
+.card { --ca:var(--amber); background:var(--card); border:1px solid var(--border); border-radius:4px; padding:14px 16px; position:relative; overflow:hidden; transition:transform .2s,border-color .15s; }
+.card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:var(--ca); }
+.card:hover { transform:translateY(-2px); border-color:var(--ca); }
+.clabel { font-family:var(--mono); font-size:10px; color:var(--dim); letter-spacing:.12em; text-transform:uppercase; margin-bottom:6px; }
+.cval   { font-family:var(--mono); font-size:26px; font-weight:700; color:var(--ca); line-height:1; }
+.csub   { font-size:12px; color:var(--dim); margin-top:3px; }
+
+/* Section headers */
+.sh { display:flex; align-items:center; gap:11px; margin:28px 0 14px; }
+.sh h2 { font-family:var(--mono); font-size:11px; letter-spacing:.2em; color:var(--dim); text-transform:uppercase; white-space:nowrap; }
+.sl { flex:1; height:1px; background:linear-gradient(90deg,var(--border),transparent); }
+
+/* Map grid */
+.mapgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:11px; margin-bottom:28px; }
+.mc { background:var(--card); border:1px solid var(--border); border-radius:4px; padding:13px 15px; }
+.mn { font-family:var(--mono); font-size:12px; color:var(--amber); margin-bottom:9px; }
+.mr { display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; color:var(--dim); }
+.mr b { color:var(--text); font-family:var(--mono); font-weight:400; }
+.bt { background:var(--border); border-radius:2px; height:4px; margin-top:8px; overflow:hidden; }
+.bf { height:100%; border-radius:2px; transition:width .9s ease; }
+
+/* Filters */
+.fbar { display:flex; gap:8px; margin-bottom:13px; flex-wrap:wrap; align-items:center; }
+.fbar select { background:var(--card); border:1px solid var(--border); color:var(--text); font-family:var(--mono); font-size:12px; padding:7px 10px; border-radius:3px; outline:none; cursor:pointer; transition:border-color .15s; }
+.fbar select:hover { border-color:var(--amber); }
+.fcnt { font-family:var(--mono); font-size:11px; color:var(--dim); margin-left:auto; }
+
+/* Table */
+.tw { overflow-x:auto; border:1px solid var(--border); border-radius:4px; }
+table { width:100%; border-collapse:collapse; font-size:13px; min-width:820px; }
+thead th { background:#0a1628; color:var(--dim); font-family:var(--mono); font-size:10px; letter-spacing:.11em; text-transform:uppercase; padding:10px 11px; text-align:left; border-bottom:1px solid var(--border); white-space:nowrap; cursor:pointer; user-select:none; }
+thead th:hover { color:var(--text); }
+thead th.sa::after { content:' ▲'; color:var(--amber); }
+thead th.sd::after { content:' ▼'; color:var(--amber); }
+tbody tr { border-bottom:1px solid rgba(30,45,64,.55); transition:background .12s; }
+tbody tr:hover { background:rgba(240,165,0,.04); }
+td { padding:8px 11px; vertical-align:middle; }
+
+.badge { display:inline-block; padding:2px 8px; border-radius:2px; font-family:var(--mono); font-size:10px; font-weight:700; letter-spacing:.07em; }
+.be { background:rgba(0,204,102,.12); color:var(--green); border:1px solid rgba(0,204,102,.3); }
+.bk { background:rgba(255,68,68,.12);  color:var(--red);   border:1px solid rgba(255,68,68,.3); }
+.bm { background:rgba(240,165,0,.12);  color:var(--amber);  border:1px solid rgba(240,165,0,.3); }
+
+.mbadge { display:inline-block; padding:2px 7px; border-radius:2px; font-family:var(--mono); font-size:10px; }
+.m-tac { background:rgba(0,170,255,.1);  color:#00aaff; border:1px solid rgba(0,170,255,.25); }
+.m-for { background:rgba(233,69,96,.1);  color:#e94560; border:1px solid rgba(233,69,96,.25); }
+.m-sca { background:rgba(180,180,0,.12); color:#cccc00; border:1px solid rgba(180,180,0,.28); }
+.m-sec { background:rgba(150,0,220,.1);  color:#bb66ff; border:1px solid rgba(150,0,220,.25); }
+
+.p  { color:var(--green); font-family:var(--mono); }
+.l  { color:var(--red);   font-family:var(--mono); }
+.nn { color:var(--dim);   font-family:var(--mono); }
+tr.re td { background:rgba(0,204,102,.03); }
+tr.rl td { background:rgba(255,68,68,.03); }
+
+.del-btn { background:none; border:1px solid #2a2a3a; color:var(--dim); cursor:pointer; font-size:11px; padding:3px 7px; border-radius:2px; transition:all .15s; font-family:var(--mono); }
+.del-btn:hover { border-color:var(--red); color:var(--red); }
+
+/* Empty */
+.empty { text-align:center; padding:60px 20px; font-family:var(--mono); color:var(--dim); }
+.empty .big { font-size:40px; margin-bottom:14px; }
+.empty p { font-size:13px; line-height:1.9; }
+
+/* Modal */
+.overlay { display:none; position:fixed; inset:0; z-index:500; background:rgba(0,0,0,.78); backdrop-filter:blur(5px); align-items:center; justify-content:center; padding:16px; }
+.overlay.open { display:flex; }
+.modal { background:#0d1117; border:1px solid var(--border); border-top:3px solid var(--accent); border-radius:6px; width:100%; max-width:540px; max-height:90vh; overflow-y:auto; box-shadow:0 24px 80px rgba(0,0,0,.7); animation:up .2s ease; }
+@keyframes up { from{transform:translateY(18px);opacity:0} to{transform:none;opacity:1} }
+.mhead { display:flex; align-items:center; justify-content:space-between; padding:17px 22px 13px; border-bottom:1px solid var(--border); }
+.mtitle { font-family:var(--mono); font-size:13px; color:var(--amber); letter-spacing:.08em; }
+.mclose { background:none; border:none; color:var(--dim); cursor:pointer; font-size:20px; line-height:1; padding:2px 6px; border-radius:2px; transition:color .15s; }
+.mclose:hover { color:var(--text); }
+.mbody { padding:20px 22px; }
+.mfoot { padding:13px 22px 19px; display:flex; gap:10px; justify-content:flex-end; border-top:1px solid var(--border); }
+
+/* Form */
+.fgrid { display:grid; grid-template-columns:1fr 1fr; gap:13px; }
+.ffull { grid-column:1/-1; }
+.field label { display:block; font-family:var(--mono); font-size:10px; color:var(--dim); letter-spacing:.12em; text-transform:uppercase; margin-bottom:5px; }
+.field input,.field select,.field textarea { width:100%; background:#080c14; border:1px solid var(--border); color:var(--text); font-family:var(--sans); font-size:14px; padding:9px 11px; border-radius:3px; outline:none; transition:border-color .15s; }
+.field input:focus,.field select:focus,.field textarea:focus { border-color:var(--accent); }
+.field input::placeholder,.field textarea::placeholder { color:var(--dim); }
+.field textarea { resize:vertical; min-height:58px; }
+.netprev { background:#080c14; border:1px solid var(--border); border-radius:3px; padding:9px 12px; font-family:var(--mono); font-size:13px; }
+
+.btn-cancel { font-family:var(--mono); font-size:12px; color:var(--dim); background:none; border:1px solid var(--border); padding:9px 18px; border-radius:3px; cursor:pointer; transition:border-color .15s,color .15s; }
+.btn-cancel:hover { border-color:var(--dim); color:var(--text); }
+.btn-save { font-family:var(--mono); font-size:12px; color:#fff; font-weight:700; background:var(--accent); border:none; padding:9px 24px; border-radius:3px; cursor:pointer; transition:background .15s; letter-spacing:.06em; }
+.btn-save:hover { background:#c73550; }
+.btn-save:disabled { background:#444; cursor:not-allowed; }
+
+/* Config notice */
+.cfgnotice { display:none; background:rgba(240,165,0,.07); border:1px solid rgba(240,165,0,.3); border-radius:4px; padding:14px 18px; margin-bottom:22px; font-family:var(--mono); font-size:12px; color:var(--amber); line-height:1.8; }
+.cfgnotice.show { display:block; }
+.cfgnotice code { background:rgba(255,255,255,.08); padding:1px 5px; border-radius:2px; }
+
+/* Toast */
+.toast { position:fixed; bottom:26px; right:26px; z-index:999; font-family:var(--mono); font-size:12px; padding:10px 18px; border-radius:4px; color:#fff; opacity:0; transform:translateY(8px); transition:opacity .25s,transform .25s; pointer-events:none; }
+.toast.show { opacity:1; transform:none; }
+.toast.ok  { background:#1a4a2e; border:1px solid var(--green); }
+.toast.err { background:#4a1a1a; border:1px solid var(--red); }
+
+footer { text-align:center; padding:20px; font-family:var(--mono); font-size:11px; color:var(--dim); border-top:1px solid var(--border); margin-top:40px; }
+footer span { color:var(--accent); }
+
+@media(max-width:600px) {
+  header { padding:12px 14px; } h1 { font-size:15px; }
+  main { padding:14px 10px 50px; }
+  .fgrid { grid-template-columns:1fr; } .ffull { grid-column:auto; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="h-left">
+    <div class="hex">⚔</div>
+    <div>
+      <h1>ARENA BREAKOUT <em>INFINITE</em></h1>
+      <div class="tagline">RAID OPERATIONS TRACKER</div>
+    </div>
+  </div>
+  <div class="h-right">
+    <div class="sync">
+      <div><span class="dot" id="sync-dot"></span><span id="sync-txt">connecting…</span></div>
+      <div id="sync-time" style="font-size:10px;margin-top:2px"></div>
+    </div>
+    <button class="btn-new" onclick="openModal()">+ NEW RAID</button>
+  </div>
+</header>
+
+<main>
+  <div class="cfgnotice" id="cfgnotice">
+    ⚠ Not connected. Find <code>WEB_APP_URL</code> near the bottom of this file and replace it with your Google Apps Script Web App URL.
+  </div>
+
+  <!-- Stat cards -->
+  <div class="cards">
+    <div class="card" style="--ca:var(--amber)"><div class="clabel">Total Raids</div><div class="cval" id="s-tot">–</div></div>
+    <div class="card" style="--ca:var(--green)"><div class="clabel">Survival Rate</div><div class="cval" id="s-surv">–</div></div>
+    <div class="card" style="--ca:#00aaff"><div class="clabel">K/D Ratio</div><div class="cval" id="s-kd">–</div><div class="csub" id="s-kd2"></div></div>
+    <div class="card" style="--ca:var(--accent)"><div class="clabel">Total Kills</div><div class="cval" id="s-kills">–</div></div>
+    <div class="card" id="c-net" style="--ca:var(--green)"><div class="clabel">Net P/L (₭)</div><div class="cval" id="s-net">–</div><div class="csub">all-time</div></div>
+    <div class="card" style="--ca:var(--amber)"><div class="clabel">Best Raid (₭)</div><div class="cval" id="s-best">–</div></div>
+    <div class="card" id="c-avg" style="--ca:var(--green)"><div class="clabel">Avg P/L / Raid</div><div class="cval" id="s-avg">–</div></div>
+    <div class="card" style="--ca:#a78bfa"><div class="clabel">Avg Kills / Raid</div><div class="cval" id="s-avgk">–</div></div>
+  </div>
+
+  <!-- Map breakdown -->
+  <div class="sh"><h2>Map Breakdown</h2><div class="sl"></div></div>
+  <div class="mapgrid" id="mapgrid"></div>
+
+  <!-- Raid log -->
+  <div class="sh"><h2>Raid Log</h2><div class="sl"></div></div>
+  <div class="fbar">
+    <select id="fr" onchange="applyFilters()">
+      <option value="">All Results</option>
+      <option>Extracted</option><option>KIA</option><option>MIA</option>
+    </select>
+    <select id="fm" onchange="applyFilters()"><option value="">All Maps</option></select>
+    <select id="fo" onchange="applyFilters()">
+      <option value="">All Modes</option>
+      <option>Tactical</option><option>Forbidden</option><option>Scav</option><option>Secure</option>
+    </select>
+    <span class="fcnt" id="fcnt"></span>
+  </div>
+  <div class="tw">
+    <table>
+      <thead><tr>
+        <th onclick="sortBy(0)">#</th>
+        <th onclick="sortBy(1)">Date</th>
+        <th onclick="sortBy(2)">Map</th>
+        <th onclick="sortBy(3)">Mode</th>
+        <th onclick="sortBy(4)">Result</th>
+        <th onclick="sortBy(5)">Kills</th>
+        <th onclick="sortBy(6)">Deaths</th>
+        <th onclick="sortBy(7)">Gear In ₭</th>
+        <th onclick="sortBy(8)">Loot Out ₭</th>
+        <th onclick="sortBy(9)">Net P/L ₭</th>
+        <th>Teammates</th>
+        <th>Notes</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</main>
+
+<footer>ARENA BREAKOUT INFINITE · RAID TRACKER · <span>SYNCED WITH GOOGLE SHEETS</span></footer>
+
+<!-- ── New Raid Modal ────────────────────────────────────────────────────── -->
+<div class="overlay" id="overlay" onclick="bgClick(event)">
+  <div class="modal">
+    <div class="mhead">
+      <span class="mtitle">⚔ LOG NEW RAID</span>
+      <button class="mclose" onclick="closeModal()">✕</button>
+    </div>
+    <div class="mbody">
+      <div class="fgrid">
+
+        <div class="field">
+          <label>Date</label>
+          <input type="date" id="f-date">
+        </div>
+
+        <div class="field">
+          <label>Map</label>
+          <select id="f-map">
+            <option value="">Select map…</option>
+            <option>Armory</option><option>Valley</option>
+            <option>Northridge</option><option>Farm</option><option>Bay</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Mode</label>
+          <select id="f-mode">
+            <option value="">Select mode…</option>
+            <option>Tactical</option><option>Forbidden</option>
+            <option>Scav</option><option>Secure</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Result</label>
+          <select id="f-result">
+            <option value="">Select result…</option>
+            <option>Extracted</option><option>KIA</option><option>MIA</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label>Kills</label>
+          <input type="number" id="f-kills" min="0" placeholder="0">
+        </div>
+
+        <div class="field">
+          <label>Deaths</label>
+          <input type="number" id="f-deaths" min="0" placeholder="0">
+        </div>
+
+        <div class="field">
+          <label>Gear In (₭)</label>
+          <input type="number" id="f-gear" min="0" placeholder="0" oninput="updateNet()">
+        </div>
+
+        <div class="field">
+          <label>Loot Out (₭)</label>
+          <input type="number" id="f-loot" min="0" placeholder="0" oninput="updateNet()">
+        </div>
+
+        <div class="field ffull" id="netrow" style="display:none">
+          <div class="netprev">Net P/L: <span id="netval" style="font-weight:700">–</span></div>
+        </div>
+
+        <div class="field ffull">
+          <label>Teammates <span style="color:var(--dim);font-size:9px">(optional)</span></label>
+          <input type="text" id="f-mates" placeholder="e.g. Alex, Jess">
+        </div>
+
+        <div class="field ffull">
+          <label>Notes <span style="color:var(--dim);font-size:9px">(optional)</span></label>
+          <textarea id="f-notes" placeholder="Anything worth remembering…"></textarea>
+        </div>
+
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" id="savebtn" onclick="saveRaid()">SAVE RAID</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────────────
+//  ⚙  PASTE YOUR WEB APP URL HERE
+//  Extensions → Apps Script → Deploy → New Deployment
+//  Type: Web App | Execute as: Me | Who has access: Anyone
+// ─────────────────────────────────────────────────────────────────────────────
+const WEB_APP_URL = 'YOUR_WEB_APP_URL_HERE';
+// ─────────────────────────────────────────────────────────────────────────────
+
+let RAIDS = [], filtered = [], sortCol = 1, sortDir = -1;
+
+// Boot
+addEventListener('DOMContentLoaded', () => {
+  document.getElementById('f-date').value = isoToday();
+  if (!WEB_APP_URL || WEB_APP_URL === 'YOUR_WEB_APP_URL_HERE') {
+    document.getElementById('cfgnotice').classList.add('show');
+    setSync('error', 'not configured');
+    render([]);
+    return;
+  }
+  load();
+});
+
+// ── Fetch raids from Sheet ────────────────────────────────────────────────────
+async function load() {
+  setSync('loading', 'syncing…');
+  try {
+    const res  = await fetch(WEB_APP_URL);
+    const data = await res.json();
+    RAIDS = data.raids || [];
+    render(RAIDS);
+    setSync('ok', `synced · ${RAIDS.length} raids`);
+    document.getElementById('sync-time').textContent = 'Last sync: ' + new Date().toLocaleTimeString();
+  } catch(e) {
+    setSync('error', 'connection error');
+    toast('Could not reach Google Sheets. Check your Web App URL.', 'err');
+    render([]);
+  }
+}
+
+// ── Save new raid to Sheet ────────────────────────────────────────────────────
+async function saveRaid() {
+  const map = v('f-map'), mode = v('f-mode'), result = v('f-result');
+  if (!map || !mode || !result) { toast('Map, Mode and Result are required.', 'err'); return; }
+
+  const payload = {
+    date: v('f-date') || isoToday(),
+    map, mode, result,
+    kills:    num('f-kills'),
+    deaths:   num('f-deaths'),
+    gear_in:  num('f-gear'),
+    loot_out: num('f-loot'),
+    teammates: v('f-mates').trim(),
+    notes:     v('f-notes').trim(),
+  };
+
+  const btn = document.getElementById('savebtn');
+  btn.disabled = true; btn.textContent = 'SAVING…';
+
+  try {
+    const res  = await fetch(WEB_APP_URL, { method:'POST', body: JSON.stringify(payload) });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'save failed');
+    closeModal();
+    toast('✓ Raid logged!', 'ok');
+    await load();
+  } catch(e) {
+    toast('Save failed: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false; btn.textContent = 'SAVE RAID';
+  }
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+async function delRaid(rowIndex, dateStr) {
+  if (!confirm(`Delete raid from ${dateStr || 'this date'}?`)) return;
+  try {
+    await fetch(WEB_APP_URL, { method:'POST', body: JSON.stringify({ action:'delete', rowIndex }) });
+    toast('Raid deleted.', 'ok');
+    await load();
+  } catch(e) { toast('Delete failed.', 'err'); }
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function render(raids) {
+  renderStats(raids);
+  renderMaps(raids);
+  applyFilters();
+}
+
+function renderStats(r) {
+  const n = r.length;
+  const ext   = r.filter(x => x.result==='Extracted').length;
+  const kills = r.reduce((s,x)=>s+(x.kills||0),0);
+  const deaths= r.reduce((s,x)=>s+(x.deaths||0),0);
+  const nets  = r.map(x=>x.net_pl||0);
+  const net   = nets.reduce((s,v)=>s+v,0);
+  const loot  = r.reduce((s,x)=>s+(x.loot_out||0),0);
+  const gear  = r.reduce((s,x)=>s+(x.gear_in||0),0);
+  const best  = nets.length ? Math.max(...nets) : 0;
+
+  set('s-tot',   n||'–');
+  set('s-surv',  n ? pct(ext,n) : '–');
+  set('s-kills', kills||'–');
+  set('s-kd',    deaths?(kills/deaths).toFixed(2):(kills?kills+'.0':'–'));
+  set('s-kd2',   n?`${kills}K / ${deaths}D`:'');
+  set('s-best',  best?fmt(best):'–');
+  set('s-avgk',  n?(kills/n).toFixed(1):'–');
+
+  const ne=id('s-net'); ne.textContent=n?(net>=0?'+':'')+fmt(net):'–'; ne.style.color=net>=0?'var(--green)':'var(--red)';
+  id('c-net').style.setProperty('--ca',net>=0?'var(--green)':'var(--red)');
+  const avg=n?Math.round((loot-gear)/n):0;
+  const ae=id('s-avg'); ae.textContent=n?(avg>=0?'+':'')+fmt(avg):'–'; ae.style.color=avg>=0?'var(--green)':'var(--red)';
+  id('c-avg').style.setProperty('--ca',avg>=0?'var(--green)':'var(--red)');
+}
+
+function renderMaps(raids) {
+  const maps=[...new Set(raids.map(r=>r.map))].filter(Boolean).sort();
+  const sel=id('fm'), cur=sel.value;
+  while(sel.options.length>1) sel.remove(1);
+  maps.forEach(m=>{const o=new Option(m,m);sel.add(o);});
+  sel.value=cur;
+  id('mapgrid').innerHTML = raids.length ? maps.map(m=>{
+    const rds=raids.filter(r=>r.map===m),ext=rds.filter(r=>r.result==='Extracted').length;
+    const kls=rds.reduce((s,r)=>s+(r.kills||0),0),net=rds.reduce((s,r)=>s+(r.net_pl||0),0);
+    const sp=rds.length?Math.round(ext/rds.length*100):0;
+    return `<div class="mc"><div class="mn">◆ ${m}</div>
+      <div class="mr"><span>Raids</span><b>${rds.length}</b></div>
+      <div class="mr"><span>Extractions</span><b>${ext}</b></div>
+      <div class="mr"><span>Kills</span><b>${kls}</b></div>
+      <div class="mr"><span>Net P/L</span><b style="color:${net>=0?'var(--green)':'var(--red)'}">${net>=0?'+':''}${fmt(net)} ₭</b></div>
+      <div class="mr"><span>Survival</span><b>${sp}%</b></div>
+      <div class="bt"><div class="bf" style="width:${sp}%;background:${sp>50?'var(--green)':'var(--accent)'}"></div></div>
+    </div>`;
+  }).join('') : '';
+}
+
+function applyFilters() {
+  const res=v('fr'),map=v('fm'),mode=id('fo').value;
+  filtered=RAIDS.filter(r=>(!res||r.result===res)&&(!map||r.map===map)&&(!mode||r.mode===mode));
+  doSort(); renderTable();
+}
+
+let hdrs=null;
+function sortBy(col) {
+  if(!hdrs)hdrs=document.querySelectorAll('thead th');
+  hdrs.forEach(h=>h.classList.remove('sa','sd'));
+  if(sortCol===col)sortDir*=-1; else{sortCol=col;sortDir=1;}
+  hdrs[col]?.classList.add(sortDir===1?'sa':'sd');
+  doSort(); renderTable();
+}
+
+function doSort() {
+  const keys=['rowIndex','date','map','mode','result','kills','deaths','gear_in','loot_out','net_pl','teammates','notes'];
+  const k=keys[sortCol]||'date';
+  filtered.sort((a,b)=>(typeof a[k]==='number'?(a[k]||0)-(b[k]||0):String(a[k]||'').localeCompare(String(b[k]||'')))*sortDir);
+}
+
+function renderTable() {
+  const tbody=id('tbody');
+  id('fcnt').textContent=`${filtered.length} raid${filtered.length!==1?'s':''}`;
+  if(!filtered.length){
+    tbody.innerHTML=`<tr><td colspan="13"><div class="empty"><div class="big">⚔</div><p>No raids logged yet.<br>Hit <strong>+ NEW RAID</strong> to record your first one.</p></div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML=filtered.map((r,i)=>{
+    const net=r.net_pl||0,nc=net>0?'p':net<0?'l':'nn',ns=(net>0?'+':'')+fmt(net);
+    const rc=r.result==='Extracted'?'be':r.result==='KIA'?'bk':'bm';
+    const mc={Tactical:'m-tac',Forbidden:'m-for',Scav:'m-sca',Secure:'m-sec'}[r.mode]||'';
+    return `<tr class="${r.result==='Extracted'?'re':'rl'}">
+      <td class="nn" style="font-size:11px">${i+1}</td>
+      <td style="font-family:var(--mono);font-size:12px;color:var(--dim)">${r.date||'–'}</td>
+      <td style="color:var(--amber);font-weight:600">${r.map||'–'}</td>
+      <td><span class="mbadge ${mc}">${r.mode||'–'}</span></td>
+      <td><span class="badge ${rc}">${r.result||'–'}</span></td>
+      <td style="font-family:var(--mono)">${r.kills??0}</td>
+      <td style="font-family:var(--mono);color:var(--dim)">${r.deaths??0}</td>
+      <td style="font-family:var(--mono);color:var(--dim)">${fmt(r.gear_in)}</td>
+      <td style="font-family:var(--mono)">${fmt(r.loot_out)}</td>
+      <td class="${nc}">${ns}</td>
+      <td style="font-size:12px;color:var(--dim)">${r.teammates||'–'}</td>
+      <td style="font-size:12px;color:var(--dim);max-width:175px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.notes||''}">${r.notes||''}</td>
+      <td><button class="del-btn" onclick="delRaid(${r.rowIndex},'${r.date}')">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+function openModal() {
+  ['f-map','f-mode','f-result','f-kills','f-deaths','f-gear','f-loot','f-mates','f-notes']
+    .forEach(x=>{ document.getElementById(x).value=''; });
+  document.getElementById('f-date').value = isoToday();
+  id('netrow').style.display='none';
+  id('overlay').classList.add('open');
+  id('f-map').focus();
+}
+function closeModal() { id('overlay').classList.remove('open'); }
+function bgClick(e)   { if(e.target===id('overlay')) closeModal(); }
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeModal(); });
+
+function updateNet() {
+  const g=num('f-gear'),l=num('f-loot'),net=l-g;
+  const nv=id('netval'),nr=id('netrow');
+  if(g||l){ nr.style.display='block'; nv.textContent=(net>=0?'+':'')+fmt(net)+' ₭'; nv.style.color=net>=0?'var(--green)':'var(--red)'; }
+  else nr.style.display='none';
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function id(x)    { return document.getElementById(x); }
+function v(x)     { return id(x)?.value||''; }
+function num(x)   { return Number(id(x)?.value)||0; }
+function set(x,t) { const e=id(x); if(e) e.textContent=t; }
+function fmt(n)   { return (n==null||n==='')?'–':Number(n).toLocaleString(); }
+function pct(n,d) { return d?(n/d*100).toFixed(1)+'%':'0%'; }
+function isoToday(){ return new Date().toISOString().slice(0,10); }
+
+function setSync(state, txt) {
+  const d=id('sync-dot'), t=id('sync-txt');
+  d.className='dot'+(state==='loading'?' loading':state==='error'?' error':'');
+  t.textContent=txt;
+}
+
+let toastT;
+function toast(msg, type) {
+  const t=id('toast'); t.textContent=msg; t.className=`toast ${type} show`;
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),3200);
+}
+</script>
+</body>
+</html>
